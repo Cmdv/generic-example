@@ -1,1 +1,1 @@
-# hasql-generic-example
+# Generic-example
