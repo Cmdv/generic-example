@@ -12,10 +12,13 @@ executable hasql-generics
   other-modules:    Types
                   , Models
   build-depends:    base
+                  , bytestring
                   , containers
+                  , contravariant-extras
                   , hasql
                   , hasql-transaction
                   , mtl
+                  , quiet
                   , text
                   , transformers
 

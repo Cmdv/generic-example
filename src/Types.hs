@@ -3,26 +3,52 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Types where
 
 import GHC.Generics
-import Data.Text (Text)
-import qualified Data.Text as T
+import Data.Text (Text, pack)
 import Data.Proxy
 import qualified Data.List.NonEmpty as NE
 import Data.Char (toLower, isUpper)
 import Data.Typeable (Typeable, typeRep, typeRepTyCon, tyConName)
 import Data.List (stripPrefix)
 
--- | Type class for types that have database information
-class Typeable a => HasDbInfo a where
+-- | DbInfo provides automatic derivation of table and column names from Haskell types.
+-- Table names are derived from the type name converted to snake_case.
+-- Column names are derived from record field names, where each field must follow
+-- this convention:
+--   * Start with the type name (first letter lowercased)
+--   * Continue with an uppercase letter
+--   * E.g., for type 'TxMetadata', use field names like 'txMetadataId', 'txMetadataKey'
+--
+-- Example:
+--
+-- @
+-- data TxMetadata = TxMetadata
+--   { txMetadataId    :: !Int
+--   , txMetadataKey   :: !Int
+--   , txMetadataJson  :: !(Maybe Text)
+--   } deriving (Show, Generic, Typeable)
+--
+-- instance DbInfo TxMetadata
+--   uniqueFields _ = ["key", "json"]
+--
+-- -- Table name: "tx_metadata"
+-- -- Column names: ["id", "key", "json"]
+-- -- Unique fields: ["key", "json"]
+-- @
+class Typeable a => DbInfo a where
   tableName :: Proxy a -> Text
   default tableName :: Proxy a -> Text
-  tableName = T.pack . camelToSnake . tyConName . typeRepTyCon . typeRep
+  tableName = pack . camelToSnake . tyConName . typeRepTyCon . typeRep
 
   columnNames :: Proxy a -> NE.NonEmpty Text
-  default columnNames :: (Generic a, GRecordFieldNames (Rep a), Typeable a) => Proxy a -> NE.NonEmpty Text
+  default columnNames :: (Generic a, GRecordFieldNames (Rep a)) => Proxy a -> NE.NonEmpty Text
   columnNames p =
     let typeName = tyConName $ typeRepTyCon $ typeRep p
         fieldNames = gRecordFieldNames (from (undefined :: a))
@@ -30,9 +56,13 @@ class Typeable a => HasDbInfo a where
          [] -> error "No fields found"
          ns -> NE.fromList $ map (fieldToColumnWithType typeName) ns
 
+  uniqueFields :: Proxy a -> [Text]  -- ^ Lists of column names that form unique constraints
+  default uniqueFields :: Proxy a -> [Text]
+  uniqueFields _ = []
+
 -- | Convert a field name to a column name
 fieldToColumnWithType :: String -> String -> Text
-fieldToColumnWithType typeName field = T.pack $ camelToSnake $
+fieldToColumnWithType typeName field = pack $ camelToSnake $
   case stripPrefix (uncamelize typeName) field of
     Just remaining -> case remaining of
       (c:_) | isUpper c -> remaining
@@ -76,3 +106,34 @@ instance (Selector c) => GRecordFieldNames (M1 S c (K1 i a)) where
 
 instance GRecordFieldNames (K1 i c) where
   gRecordFieldNames _ = []
+
+data TxOutTableType = TxOutCore | TxOutVariantAddress
+  deriving (Eq, Show)
+
+
+--------------------------------------------------------------------------------
+-- Entity
+--------------------------------------------------------------------------------
+
+data Entity record =
+  Entity
+    { entityKey :: Key record
+    , entityVal :: record
+    }
+
+-- Type family for keys
+type family Key a
+
+-- Add standalone deriving instances
+deriving instance Generic (Entity record)
+deriving instance (Eq (Key record), Eq record) => Eq (Entity record)
+deriving instance (Ord (Key record), Ord record) => Ord (Entity record)
+deriving instance (Show (Key record), Show record) => Show (Entity record)
+deriving instance (Read (Key record), Read record) => Read (Entity record)
+
+-- Functions to work with entities
+fromEntity :: Entity a -> a
+fromEntity = entityVal
+
+toEntity :: Key a -> a -> Entity a
+toEntity = Entity
