@@ -1,19 +1,16 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Models where
 
 import Data.ByteString (ByteString)
-import Data.Proxy
-import Data.Text (Text, unpack)
+import Data.Text (Text)
 import Data.Word (Word64)
 import GHC.Generics
 import Quiet (Quiet (..))
 import Types
-import qualified Data.List.NonEmpty as NE
 import qualified Hasql.Decoders as D
 import qualified Hasql.Encoders as E
 import Data.Int (Int64)
@@ -38,7 +35,8 @@ data TxMetadata = TxMetadata
   } deriving (Eq, Show, Generic)
 
 -- Create instance
-instance DbInfo TxMetadata
+instance DbInfo TxMetadata where
+  uniqueFields _ = ["key", "json"]
 
 type instance Key TxMetadata = TxMetadataId
 
